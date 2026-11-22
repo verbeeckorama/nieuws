@@ -22,6 +22,9 @@ header{position:sticky;top:0;z-index:5;background:var(--card);border-block-end:2
 .big.primary{background:var(--accent);color:var(--accent-fg)}
 .aa{font-size:18px}.aa b{font-size:30px}
 #kies{flex:1;min-width:220px;justify-content:space-between;font-size:22px}
+#ververs .ico{font-size:30px;line-height:1;display:inline-block}
+#ververs.bezig .ico{animation:draai 1s linear infinite}
+@keyframes draai{to{transform:rotate(360deg)}}
 #kies span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 main{max-width:900px;margin:0 auto;padding:14px}
 h1{font-size:1.4rem;margin:.4rem .2rem .8rem}
@@ -36,13 +39,11 @@ li a:active{border-color:var(--accent);background:#eaf2fa}
 .item.open{border-color:var(--accent)}
 .item>button{display:block;width:100%;background:none;border:0;padding:16px 18px;text-align:start;color:var(--fg);font-size:inherit}
 .item>button .meta{display:flex;justify-content:space-between;gap:10px}
-.pijl{font-weight:700;color:var(--accent)}
 .voor{padding:0 18px 18px}
 .voor img{display:block;width:100%;max-height:60vh;object-fit:cover;border-radius:10px;background:var(--line);margin-block-end:14px}
 .voor p{font-size:.95rem;margin:0 0 16px}
 .voor .leeg{color:var(--muted)}
 .lees{display:flex;align-items:center;justify-content:center;min-height:64px;border-radius:14px;background:var(--accent);color:var(--accent-fg);font-size:22px;font-weight:700;text-decoration:none}
-#voor.aan{background:var(--accent);color:var(--accent-fg)}
 .msg{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:22px;font-size:1rem;text-align:center}
 .onder{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:24px 0 40px}
 #keuze{position:fixed;inset:0;z-index:10;background:var(--bg);overflow:auto;padding:16px;padding-block-start:max(16px,env(safe-area-inset-top))}
@@ -50,7 +51,13 @@ li a:active{border-color:var(--accent);background:#eaf2fa}
 #keuze h2{font-size:30px;margin:6px 4px 16px}
 #lijst{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;max-width:900px;margin:0 auto}
 #lijst button{min-height:76px;font-size:26px;font-weight:600;border-radius:14px;border:2px solid var(--line);background:var(--card);color:var(--fg);text-align:start;padding:0 20px}
-#lijst button.on{border-color:var(--accent);background:var(--accent);color:var(--accent-fg)}
+#lijst button{display:flex;align-items:center;gap:18px}
+#lijst .vak{flex:none;width:44px;height:44px;border:3px solid var(--accent);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:32px;line-height:1;color:var(--accent-fg);background:var(--card)}
+#lijst button.on{border-color:var(--accent)}
+#lijst button.on .vak{background:var(--accent)}
+.snel{display:flex;gap:12px;flex-wrap:wrap;max-width:900px;margin:0 auto 16px}
+.klaar{display:block;width:100%;max-width:900px;margin:20px auto 30px;min-height:76px;font-size:26px}
+.hint{max-width:900px;margin:0 auto 14px;font-size:22px;color:var(--muted)}
 .kop-keuze{display:flex;justify-content:space-between;align-items:center;max-width:900px;margin:0 auto}
 </style>
 </head>
@@ -58,11 +65,11 @@ li a:active{border-color:var(--accent);background:#eaf2fa}
 <header>
   <button class="big aa" id="kleiner" aria-label="Letters kleiner"><b>A</b>&nbsp;kleiner</button>
   <button class="big aa" id="groter" aria-label="Letters groter"><b>A</b>&nbsp;groter</button>
+  <button class="big primary" id="ververs" aria-label="Nieuws vernieuwen"><span class="ico" aria-hidden="true">&#8635;</span><span class="tx">Vernieuwen</span></button>
   <button class="big" id="kies"><span id="kiesTxt">Alle kranten</span><span aria-hidden="true">&#9662;</span></button>
-  <button class="big" id="voor" aria-pressed="false">Voorvertoning: uit</button>
 </header>
 <main>
-  <h1 id="titel">Laatste nieuws</h1>
+  <h1 id="titel">Nieuws van de voorbije 24 uur</h1>
   <p class="status" id="status">Het nieuws wordt geladen...</p>
   <ol id="koppen"></ol>
   <div class="onder">
@@ -70,9 +77,12 @@ li a:active{border-color:var(--accent);background:#eaf2fa}
     <button class="big" id="boven">Naar boven</button>
   </div>
 </main>
-<div id="keuze" hidden role="dialog" aria-label="Kies een krant">
-  <div class="kop-keuze"><h2>Welke krant?</h2><button class="big" id="sluit">Sluiten</button></div>
+<div id="keuze" hidden role="dialog" aria-label="Kies je kranten">
+  <div class="kop-keuze"><h2>Mijn kranten</h2></div>
+  <p class="hint">Tik een krant aan om ze aan of uit te zetten.</p>
+  <div class="snel"><button class="big" id="allesAan">Alles aanvinken</button><button class="big" id="allesUit">Alles uitvinken</button></div>
   <div id="lijst"></div>
+  <button class="big primary klaar" id="sluit">Klaar</button>
 </div>
 <script>
 const KRANTEN=[
@@ -95,8 +105,12 @@ const ALLE="Alle kranten";
 const MATEN=[18,20,22,24,27,30,34,38,44];
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const $=s=>document.querySelector(s);
-let maat=parseInt(store.get("maat"));if(!MATEN.includes(maat))maat=22;let voorAan=store.get("voor")==="1", open=new Set(); let keuze=store.get("krant")||ALLE, data={}, bijgewerkt=null, geladen=0;
-if(keuze!==ALLE&&!KRANTEN.some(k=>k.n===keuze))keuze=ALLE;
+let maat=parseInt(store.get("maat"));if(!MATEN.includes(maat))maat=22;let open=new Set(); const DAG=24*3600000; let data={}, bijgewerkt=null, geladen=0;
+const NAMEN=KRANTEN.map(k=>k.n);
+let gekozen;try{gekozen=JSON.parse(store.get("kranten")||"null")}catch(e){gekozen=null}
+if(!Array.isArray(gekozen))gekozen=NAMEN.slice();
+gekozen=gekozen.filter(n=>NAMEN.includes(n));if(!gekozen.length)gekozen=NAMEN.slice();
+const bewaarKeuze=()=>store.set("kranten",JSON.stringify(gekozen));
 
 function zetMaat(){document.documentElement.style.fontSize=maat+"px";$("#kleiner").disabled=maat<=MATEN[0];$("#groter").disabled=maat>=MATEN[MATEN.length-1];store.set("maat",maat)}
 function stap(r){let i=MATEN.indexOf(maat);if(i<0)i=2;i=Math.min(MATEN.length-1,Math.max(0,i+r));maat=MATEN[i];zetMaat()}
@@ -107,30 +121,31 @@ function geleden(d){if(!d)return"";const m=Math.round((Date.now()-d)/60000);
 function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 
 function toon(){
- $("#kiesTxt").textContent=keuze; $("#titel").textContent=keuze===ALLE?"Laatste nieuws":keuze;
+ const een=gekozen.length===1, alle=gekozen.length===NAMEN.length;
+ $("#kiesTxt").textContent=alle?"Alle kranten":een?gekozen[0]:"Mijn kranten ("+gekozen.length+")";
+ $("#titel").textContent=(een?gekozen[0]:"Nieuws")+" van de voorbije 24 uur";
  const ol=$("#koppen");ol.textContent="";
  let lijst;
- if(keuze===ALLE){lijst=KRANTEN.flatMap(k=>(data[k.n]||[]).slice(0,15).map(i=>({...i,s:k.n}))).sort((a,b)=>(b.d||0)-(a.d||0)).slice(0,80)}
- else lijst=(data[keuze]||[]).map(i=>({...i,s:keuze}));
- if(!lijst.length){const li=el("li");li.append(el("div","msg",geladen?"Er zijn op dit moment geen koppen van deze krant. Kies een andere krant bovenaan.":"Even geduld, het nieuws wordt geladen..."));ol.append(li);return}
+ const recent=i=>!i.d||Date.now()-i.d<=DAG;
+ lijst=gekozen.flatMap(n=>(data[n]||[]).filter(recent).map(i=>({...i,s:n}))).sort((a,b)=>(b.d||0)-(a.d||0));
+ if(!lijst.length){const li=el("li");li.append(el("div","msg",geladen?"Er zijn de voorbije 24 uur geen koppen van deze kranten. Tik bovenaan op de kranten-knop om er meer aan te vinken.":"Even geduld, het nieuws wordt geladen..."));ol.append(li);return}
  for(const i of lijst){const li=el("li");
   const m=el("div","meta"),links=el("span");
-  if(keuze===ALLE)links.append(document.createTextNode(i.s+"  ·  "));
+  if(!een)links.append(document.createTextNode(i.s+"  ·  "));
   links.append(el("span",i.d&&Date.now()-i.d<3600000?"fresh":"",geleden(i.d)));m.append(links);
-  if(!voorAan){const a=el("a");a.href=i.l;a.rel="noopener noreferrer";a.append(el("div","kop",i.t),m);li.append(a);ol.append(li);continue}
-  const box=el("div","item"),b=el("button"),pijl=el("span","pijl");m.append(pijl);
+  const box=el("div","item"),b=el("button");
   b.append(el("div","kop",i.t),m);box.append(b);li.append(box);ol.append(li);
-  const zet=o=>{box.classList.toggle("open",o);b.setAttribute("aria-expanded",o);pijl.textContent=o?"Sluiten \u25B4":"Meer \u25BE";
+  const zet=o=>{box.classList.toggle("open",o);b.setAttribute("aria-expanded",o);
    const oud=box.querySelector(".voor");if(oud)oud.remove();if(!o)return;
-   const v=el("div","voor");
+   const v=el("a","voor");v.href=i.l;v.rel="noopener noreferrer";v.style.display="block";v.style.color="inherit";v.style.textDecoration="none";
    if(i.i){const img=el("img");img.alt="";img.loading="lazy";img.referrerPolicy="no-referrer";img.addEventListener("error",()=>img.remove());img.src=i.i;v.append(img)}
    v.append(i.x?el("p",null,i.x):el("p","leeg","Geen voorproefje beschikbaar voor dit artikel."));
-   const a=el("a","lees","Lees het volledige artikel");a.href=i.l;a.rel="noopener noreferrer";v.append(a);box.append(v)};
+   v.append(el("span","lees","Lees het volledige artikel"));box.append(v)};
   zet(open.has(i.l));
   b.addEventListener("click",()=>{const o=!open.has(i.l);o?open.add(i.l):open.delete(i.l);zet(o)})}
 }
 function status(){const n=KRANTEN.filter(k=>data[k.n]&&data[k.n].length).length;
- $("#status").textContent=n?("Bijgewerkt om "+(bijgewerkt||new Date()).toLocaleTimeString("nl-BE",{hour:"2-digit",minute:"2-digit"})+"."):"Het nieuws kon niet geladen worden. Tik onderaan op \u201cNieuws vernieuwen\u201d."}
+ $("#status").textContent=n?("Bijgewerkt om "+(bijgewerkt||new Date()).toLocaleTimeString("nl-BE",{hour:"2-digit",minute:"2-digit"})+"."):"Het nieuws kon niet geladen worden. Tik bovenaan op \u201cVernieuwen\u201d."}
 
 function parse(xml){const doc=new DOMParser().parseFromString(xml,"text/xml");if(doc.querySelector("parsererror"))throw new Error("feed");
  let it=[...doc.querySelectorAll("item")];const atom=!it.length;if(atom)it=[...doc.querySelectorAll("entry")];
@@ -139,33 +154,39 @@ function parse(xml){const doc=new DOMParser().parseFromString(xml,"text/xml");if
   const d=new Date(g("pubDate")||g("published")||g("updated")||g("dc:date"));const tx=document.createElement("textarea");tx.innerHTML=g("title").replace(/<[^>]*>/g,"");
   const html=g("description")||g("summary")||g("content");const im=(html.match(/<img[^>]+src="([^"]+)"/)||[])[1]||((i.querySelector("enclosure[type^=image]")||{getAttribute(){return""}}).getAttribute("url"));
   const tx2=document.createElement("textarea");tx2.innerHTML=html.replace(/<[^>]*>/g," ");let x=tx2.value.replace(/\s+/g," ").trim();if(x.length>350)x=x.slice(0,x.lastIndexOf(" ",340))+"...";
-  return{t:tx.value.trim(),l:(l||"").trim(),d:isNaN(d)?null:d,x:x,i:im||""}}).filter(x=>x.t&&/^https?:/.test(x.l)).sort((a,b)=>(b.d||0)-(a.d||0)).slice(0,30)}
+  return{t:tx.value.trim(),l:(l||"").trim(),d:isNaN(d)?null:d,x:x,i:im||""}}).filter(x=>x.t&&/^https?:/.test(x.l)).sort((a,b)=>(b.d||0)-(a.d||0)).slice(0,80)}
 // Reserve: enkel als headlines.json ontbreekt (bv. bij lokaal openen), feeds rechtstreeks of via doorgeefluik ophalen.
 const PROX=[u=>u,u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u),u=>"https://corsproxy.io/?url="+encodeURIComponent(u)];
 async function direct(k){for(const p of PROX){try{const c=new AbortController(),to=setTimeout(()=>c.abort(),9000);
  const r=await fetch(p(k.u),{credentials:"omit",signal:c.signal,cache:"no-store"});clearTimeout(to);if(!r.ok)continue;const it=parse(await r.text());if(it.length)return it}catch(e){}}return[]}
 
 let bezig=false,laatst=0;
-async function laad(){if(bezig)return;bezig=true;laatst=Date.now();$("#vernieuw").textContent="Bezig met laden...";
+async function laad(){if(bezig)return;bezig=true;laatst=Date.now();$("#vernieuw").textContent="Bezig met laden...";$("#ververs").classList.add("bezig");$("#ververs .tx").textContent="Laden...";
  try{const r=await fetch("headlines.json?"+Date.now(),{cache:"no-store"});if(!r.ok)throw 0;const j=await r.json();
   for(const f of j.feeds)data[f.n]=(f.items||[]).map(i=>({t:i.t,l:i.l,d:i.d?new Date(i.d):null,x:i.x||"",i:i.i||""}));bijgewerkt=new Date(j.updated)}
  catch(e){await Promise.all(KRANTEN.map(async k=>{const it=await direct(k);if(it.length)data[k.n]=it;geladen=1;toon()}));bijgewerkt=new Date()}
- geladen=1;bezig=false;$("#vernieuw").textContent="Nieuws vernieuwen";status();toon()}
+ geladen=1;bezig=false;$("#vernieuw").textContent="Nieuws vernieuwen";$("#ververs").classList.remove("bezig");$("#ververs .tx").textContent="Vernieuwen";status();toon()}
 
 function lijstKranten(){const l=$("#lijst");l.textContent="";
- [ALLE,...KRANTEN.map(k=>k.n)].forEach(n=>{const b=el("button",n===keuze?"on":"",n);b.addEventListener("click",()=>{keuze=n;store.set("krant",n);$("#keuze").hidden=true;toon();window.scrollTo(0,0)});l.append(b)})}
+ NAMEN.forEach(n=>{const b=el("button"),v=el("span","vak");v.setAttribute("aria-hidden","true");b.setAttribute("role","checkbox");
+  const zet=()=>{const on=gekozen.includes(n);b.classList.toggle("on",on);b.setAttribute("aria-checked",on);v.textContent=on?"\u2713":""};
+  b.append(v,el("span",null,n));zet();
+  b.addEventListener("click",()=>{if(gekozen.includes(n))gekozen=gekozen.filter(x=>x!==n);else gekozen=NAMEN.filter(x=>x===n||gekozen.includes(x));bewaarKeuze();zet()});
+  l.append(b)})}
+function sluitKeuze(){if(!gekozen.length){gekozen=NAMEN.slice();bewaarKeuze()}$("#keuze").hidden=true;open.clear();toon();window.scrollTo(0,0)}
 
-function zetVoor(){const b=$("#voor");b.textContent="Voorvertoning: "+(voorAan?"aan":"uit");b.classList.toggle("aan",voorAan);b.setAttribute("aria-pressed",voorAan)}
-$("#voor").addEventListener("click",()=>{voorAan=!voorAan;store.set("voor",voorAan?"1":"0");open.clear();zetVoor();toon()});
 $("#kleiner").addEventListener("click",()=>stap(-1));
 $("#groter").addEventListener("click",()=>stap(1));
 $("#kies").addEventListener("click",()=>{lijstKranten();$("#keuze").hidden=false;$("#keuze").scrollTop=0});
-$("#sluit").addEventListener("click",()=>{$("#keuze").hidden=true});
+$("#sluit").addEventListener("click",sluitKeuze);
+$("#allesAan").addEventListener("click",()=>{gekozen=NAMEN.slice();bewaarKeuze();lijstKranten()});
+$("#allesUit").addEventListener("click",()=>{gekozen=[];bewaarKeuze();lijstKranten()});
 $("#vernieuw").addEventListener("click",()=>{laad();window.scrollTo(0,0)});
+$("#ververs").addEventListener("click",()=>{open.clear();laad();window.scrollTo(0,0)});
 $("#boven").addEventListener("click",()=>window.scrollTo({top:0,behavior:"smooth"}));
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-laatst>5*60000)laad()});
 setInterval(()=>{if(window.scrollY<150&&$("#keuze").hidden&&!open.size)laad()},10*60000);
-zetMaat();zetVoor();toon();laad();
+zetMaat();toon();laad();
 </script>
 </body>
 </html>
