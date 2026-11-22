@@ -1,7 +1,7 @@
 name: Nieuws bijwerken
 on:
   schedule:
-    - cron: "*/10 * * * *"  # elke 10 minuten
+        - cron: "3,13,23,33,43,53 * * * *"   # elke 10 minuten, net naast de drukke momenten
   workflow_dispatch:
   push:
     branches: [main]
