@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="nl" dir="ltr">
+<head>
+<meta charset="utf-8"><meta name="MSRAI_Label_dbd012e0-e600-4c3e-83b7-7d3141c15efc_AI_Disclosure" content="Made with AI">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="referrer" content="no-referrer">
+<meta name="apple-mobile-web-app-title" content="Nieuws">
+<meta name="format-detection" content="telephone=no">
+<title>Het nieuws van vandaag</title>
+<style>
+:root{--bg:#f6f4ef;--card:#ffffff;--fg:#111111;--muted:#4a4a4a;--line:#d6d2c8;--accent:#0b4f8a;--accent-fg:#ffffff;--new:#0a6b0a}
+@media (prefers-color-scheme:dark){:root{--bg:#f6f4ef;--card:#ffffff;--fg:#111111}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{font-size:22px;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Helvetica Neue","Segoe UI",Arial,sans-serif;line-height:1.35}
+button{font-family:inherit;touch-action:manipulation;cursor:pointer}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-block-end:2px solid var(--line);padding:10px 14px;padding-block-start:max(10px,env(safe-area-inset-top));display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.big{min-height:64px;min-width:64px;border-radius:14px;border:2px solid var(--accent);background:var(--card);color:var(--accent);font-size:22px;font-weight:700;padding:0 18px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.big:active{background:var(--accent);color:var(--accent-fg)}
+.big:disabled{opacity:.35}
+.big.primary{background:var(--accent);color:var(--accent-fg)}
+.aa{font-size:18px}.aa b{font-size:30px}
+#kies{flex:1;min-width:220px;justify-content:space-between;font-size:22px}
+#kies span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+main{max-width:900px;margin:0 auto;padding:14px}
+h1{font-size:1.4rem;margin:.4rem .2rem .8rem}
+.status{font-size:.8rem;color:var(--muted);margin:0 .2rem .8rem}
+ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+li a{display:block;background:var(--card);border:2px solid var(--line);border-radius:14px;padding:16px 18px;color:var(--fg);text-decoration:none}
+li a:active{border-color:var(--accent);background:#eaf2fa}
+.kop{font-size:1rem;font-weight:600}
+.meta{font-size:.78rem;color:var(--muted);margin-block-start:6px}
+.meta .fresh{color:var(--new);font-weight:700}
+.msg{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:22px;font-size:1rem;text-align:center}
+.onder{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:24px 0 40px}
+#keuze{position:fixed;inset:0;z-index:10;background:var(--bg);overflow:auto;padding:16px;padding-block-start:max(16px,env(safe-area-inset-top))}
+#keuze[hidden]{display:none}
+#keuze h2{font-size:30px;margin:6px 4px 16px}
+#lijst{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;max-width:900px;margin:0 auto}
+#lijst button{min-height:76px;font-size:26px;font-weight:600;border-radius:14px;border:2px solid var(--line);background:var(--card);color:var(--fg);text-align:start;padding:0 20px}
+#lijst button.on{border-color:var(--accent);background:var(--accent);color:var(--accent-fg)}
+.kop-keuze{display:flex;justify-content:space-between;align-items:center;max-width:900px;margin:0 auto}
+</style>
+</head>
+<body>
+<header>
+  <button class="big aa" id="kleiner" aria-label="Letters kleiner"><b>A</b>&nbsp;kleiner</button>
+  <button class="big aa" id="groter" aria-label="Letters groter"><b>A</b>&nbsp;groter</button>
+  <button class="big" id="kies"><span id="kiesTxt">Alle kranten</span><span aria-hidden="true">&#9662;</span></button>
+</header>
+<main>
+  <h1 id="titel">Laatste nieuws</h1>
+  <p class="status" id="status">Het nieuws wordt geladen...</p>
+  <ol id="koppen"></ol>
+  <div class="onder">
+    <button class="big primary" id="vernieuw">Nieuws vernieuwen</button>
+    <button class="big" id="boven">Naar boven</button>
+  </div>
+</main>
+<div id="keuze" hidden role="dialog" aria-label="Kies een krant">
+  <div class="kop-keuze"><h2>Welke krant?</h2><button class="big" id="sluit">Sluiten</button></div>
+  <div id="lijst"></div>
+</div>
+<script>
+const KRANTEN=[
+ {n:"VRT NWS",u:"https://www.vrt.be/vrtnws/nl.rss.articles.xml"},
+ {n:"Het Laatste Nieuws",u:"https://www.hln.be/home/rss.xml"},
+ {n:"De Standaard",u:"https://www.standaard.be/rss/section/1f2838d4-99ea-49f0-9102-138784c7ea7c"},
+ {n:"Het Nieuwsblad",u:"https://www.nieuwsblad.be/rss/section/55178e67-15a8-4ddd-a3d8-bfe5708f8932"},
+ {n:"De Morgen",u:"https://www.demorgen.be/in-het-nieuws/rss.xml"},
+ {n:"De Tijd",u:"https://www.tijd.be/rss/top_stories.xml"},
+ {n:"Gazet van Antwerpen",u:"https://www.gva.be/rss/section/ca750cdf-3d1e-4621-90ef-a3260118e21c"},
+ {n:"Het Belang van Limburg",u:"https://www.hbvl.be/rss/section/D1618839-F921-43CC-AF6A-A2B200A962DC"},
+ {n:"Knack",u:"https://www.knack.be/feed/"},
+ {n:"Bruzz",u:"https://www.bruzz.be/rss.xml"},
+ {n:"Newsmonkey",u:"https://newsmonkey.be/feed/"},
+ {n:"Apache",u:"https://www.apache.be/feed"},
+ {n:"Sporza (sport)",u:"https://sporza.be/nl.rss.xml"},
+ {n:"HLN Sport",u:"https://www.hln.be/sport/rss.xml"}
+];
+const ALLE="Alle kranten";
+const MATEN=[18,20,22,24,27,30,34,38,44];
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const $=s=>document.querySelector(s);
+let maat=parseInt(store.get("maat"));if(!MATEN.includes(maat))maat=22;let keuze=store.get("krant")||ALLE, data={}, bijgewerkt=null, geladen=0;
+if(keuze!==ALLE&&!KRANTEN.some(k=>k.n===keuze))keuze=ALLE;
+
+function zetMaat(){document.documentElement.style.fontSize=maat+"px";$("#kleiner").disabled=maat<=MATEN[0];$("#groter").disabled=maat>=MATEN[MATEN.length-1];store.set("maat",maat)}
+function stap(r){let i=MATEN.indexOf(maat);if(i<0)i=2;i=Math.min(MATEN.length-1,Math.max(0,i+r));maat=MATEN[i];zetMaat()}
+
+function geleden(d){if(!d)return"";const m=Math.round((Date.now()-d)/60000);
+ if(m<2)return"zonet";if(m<60)return m+" minuten geleden";const u=Math.floor(m/60);if(u<24)return u===1?"1 uur geleden":u+" uur geleden";
+ return d.toLocaleDateString("nl-BE",{weekday:"long",day:"numeric",month:"long"})}
+function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+
+function toon(){
+ $("#kiesTxt").textContent=keuze; $("#titel").textContent=keuze===ALLE?"Laatste nieuws":keuze;
+ const ol=$("#koppen");ol.textContent="";
+ let lijst;
+ if(keuze===ALLE){lijst=KRANTEN.flatMap(k=>(data[k.n]||[]).slice(0,15).map(i=>({...i,s:k.n}))).sort((a,b)=>(b.d||0)-(a.d||0)).slice(0,80)}
+ else lijst=(data[keuze]||[]).map(i=>({...i,s:keuze}));
+ if(!lijst.length){const li=el("li");li.append(el("div","msg",geladen?"Er zijn op dit moment geen koppen van deze krant. Kies een andere krant bovenaan.":"Even geduld, het nieuws wordt geladen..."));ol.append(li);return}
+ for(const i of lijst){const li=el("li"),a=el("a");a.href=i.l;a.rel="noopener noreferrer";
+  a.append(el("div","kop",i.t));const m=el("div","meta");
+  if(keuze===ALLE)m.append(document.createTextNode(i.s+"  ·  "));
+  const t=el("span",i.d&&Date.now()-i.d<3600000?"fresh":"",geleden(i.d));m.append(t);a.append(m);li.append(a);ol.append(li)}
+}
+function status(){const n=KRANTEN.filter(k=>data[k.n]&&data[k.n].length).length;
+ $("#status").textContent=n?("Bijgewerkt om "+(bijgewerkt||new Date()).toLocaleTimeString("nl-BE",{hour:"2-digit",minute:"2-digit"})+"."):"Het nieuws kon niet geladen worden. Tik onderaan op \u201cNieuws vernieuwen\u201d."}
+
+function parse(xml){const doc=new DOMParser().parseFromString(xml,"text/xml");if(doc.querySelector("parsererror"))throw new Error("feed");
+ let it=[...doc.querySelectorAll("item")];const atom=!it.length;if(atom)it=[...doc.querySelectorAll("entry")];
+ return it.map(i=>{const g=t=>{const e=i.getElementsByTagName(t)[0];return e?e.textContent:""};
+  let l=atom?((i.querySelector("link")||{getAttribute(){return""}}).getAttribute("href")):g("link");
+  const d=new Date(g("pubDate")||g("published")||g("updated")||g("dc:date"));const tx=document.createElement("textarea");tx.innerHTML=g("title").replace(/<[^>]*>/g,"");
+  return{t:tx.value.trim(),l:(l||"").trim(),d:isNaN(d)?null:d}}).filter(x=>x.t&&/^https?:/.test(x.l)).sort((a,b)=>(b.d||0)-(a.d||0)).slice(0,30)}
+// Reserve: enkel als headlines.json ontbreekt (bv. bij lokaal openen), feeds rechtstreeks of via doorgeefluik ophalen.
+const PROX=[u=>u,u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u),u=>"https://corsproxy.io/?url="+encodeURIComponent(u)];
+async function direct(k){for(const p of PROX){try{const c=new AbortController(),to=setTimeout(()=>c.abort(),9000);
+ const r=await fetch(p(k.u),{credentials:"omit",signal:c.signal,cache:"no-store"});clearTimeout(to);if(!r.ok)continue;const it=parse(await r.text());if(it.length)return it}catch(e){}}return[]}
+
+let bezig=false,laatst=0;
+async function laad(){if(bezig)return;bezig=true;laatst=Date.now();$("#vernieuw").textContent="Bezig met laden...";
+ try{const r=await fetch("headlines.json?"+Date.now(),{cache:"no-store"});if(!r.ok)throw 0;const j=await r.json();
+  for(const f of j.feeds)data[f.n]=(f.items||[]).map(i=>({t:i.t,l:i.l,d:i.d?new Date(i.d):null}));bijgewerkt=new Date(j.updated)}
+ catch(e){await Promise.all(KRANTEN.map(async k=>{const it=await direct(k);if(it.length)data[k.n]=it;geladen=1;toon()}));bijgewerkt=new Date()}
+ geladen=1;bezig=false;$("#vernieuw").textContent="Nieuws vernieuwen";status();toon()}
+
+function lijstKranten(){const l=$("#lijst");l.textContent="";
+ [ALLE,...KRANTEN.map(k=>k.n)].forEach(n=>{const b=el("button",n===keuze?"on":"",n);b.addEventListener("click",()=>{keuze=n;store.set("krant",n);$("#keuze").hidden=true;toon();window.scrollTo(0,0)});l.append(b)})}
+
+$("#kleiner").addEventListener("click",()=>stap(-1));
+$("#groter").addEventListener("click",()=>stap(1));
+$("#kies").addEventListener("click",()=>{lijstKranten();$("#keuze").hidden=false;$("#keuze").scrollTop=0});
+$("#sluit").addEventListener("click",()=>{$("#keuze").hidden=true});
+$("#vernieuw").addEventListener("click",()=>{laad();window.scrollTo(0,0)});
+$("#boven").addEventListener("click",()=>window.scrollTo({top:0,behavior:"smooth"}));
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-laatst>5*60000)laad()});
+setInterval(()=>{if(window.scrollY<150&&$("#keuze").hidden)laad()},10*60000);
+zetMaat();toon();laad();
+</script>
+</body>
+</html>
