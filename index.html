@@ -32,6 +32,17 @@ li a:active{border-color:var(--accent);background:#eaf2fa}
 .kop{font-size:1rem;font-weight:600}
 .meta{font-size:.78rem;color:var(--muted);margin-block-start:6px}
 .meta .fresh{color:var(--new);font-weight:700}
+.item{background:var(--card);border:2px solid var(--line);border-radius:14px;overflow:hidden}
+.item.open{border-color:var(--accent)}
+.item>button{display:block;width:100%;background:none;border:0;padding:16px 18px;text-align:start;color:var(--fg);font-size:inherit}
+.item>button .meta{display:flex;justify-content:space-between;gap:10px}
+.pijl{font-weight:700;color:var(--accent)}
+.voor{padding:0 18px 18px}
+.voor img{display:block;width:100%;max-height:60vh;object-fit:cover;border-radius:10px;background:var(--line);margin-block-end:14px}
+.voor p{font-size:.95rem;margin:0 0 16px}
+.voor .leeg{color:var(--muted)}
+.lees{display:flex;align-items:center;justify-content:center;min-height:64px;border-radius:14px;background:var(--accent);color:var(--accent-fg);font-size:22px;font-weight:700;text-decoration:none}
+#voor.aan{background:var(--accent);color:var(--accent-fg)}
 .msg{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:22px;font-size:1rem;text-align:center}
 .onder{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:24px 0 40px}
 #keuze{position:fixed;inset:0;z-index:10;background:var(--bg);overflow:auto;padding:16px;padding-block-start:max(16px,env(safe-area-inset-top))}
@@ -48,6 +59,7 @@ li a:active{border-color:var(--accent);background:#eaf2fa}
   <button class="big aa" id="kleiner" aria-label="Letters kleiner"><b>A</b>&nbsp;kleiner</button>
   <button class="big aa" id="groter" aria-label="Letters groter"><b>A</b>&nbsp;groter</button>
   <button class="big" id="kies"><span id="kiesTxt">Alle kranten</span><span aria-hidden="true">&#9662;</span></button>
+  <button class="big" id="voor" aria-pressed="false">Voorvertoning: uit</button>
 </header>
 <main>
   <h1 id="titel">Laatste nieuws</h1>
@@ -83,7 +95,7 @@ const ALLE="Alle kranten";
 const MATEN=[18,20,22,24,27,30,34,38,44];
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const $=s=>document.querySelector(s);
-let maat=parseInt(store.get("maat"));if(!MATEN.includes(maat))maat=22;let keuze=store.get("krant")||ALLE, data={}, bijgewerkt=null, geladen=0;
+let maat=parseInt(store.get("maat"));if(!MATEN.includes(maat))maat=22;let voorAan=store.get("voor")==="1", open=new Set(); let keuze=store.get("krant")||ALLE, data={}, bijgewerkt=null, geladen=0;
 if(keuze!==ALLE&&!KRANTEN.some(k=>k.n===keuze))keuze=ALLE;
 
 function zetMaat(){document.documentElement.style.fontSize=maat+"px";$("#kleiner").disabled=maat<=MATEN[0];$("#groter").disabled=maat>=MATEN[MATEN.length-1];store.set("maat",maat)}
@@ -101,10 +113,21 @@ function toon(){
  if(keuze===ALLE){lijst=KRANTEN.flatMap(k=>(data[k.n]||[]).slice(0,15).map(i=>({...i,s:k.n}))).sort((a,b)=>(b.d||0)-(a.d||0)).slice(0,80)}
  else lijst=(data[keuze]||[]).map(i=>({...i,s:keuze}));
  if(!lijst.length){const li=el("li");li.append(el("div","msg",geladen?"Er zijn op dit moment geen koppen van deze krant. Kies een andere krant bovenaan.":"Even geduld, het nieuws wordt geladen..."));ol.append(li);return}
- for(const i of lijst){const li=el("li"),a=el("a");a.href=i.l;a.rel="noopener noreferrer";
-  a.append(el("div","kop",i.t));const m=el("div","meta");
-  if(keuze===ALLE)m.append(document.createTextNode(i.s+"  ·  "));
-  const t=el("span",i.d&&Date.now()-i.d<3600000?"fresh":"",geleden(i.d));m.append(t);a.append(m);li.append(a);ol.append(li)}
+ for(const i of lijst){const li=el("li");
+  const m=el("div","meta"),links=el("span");
+  if(keuze===ALLE)links.append(document.createTextNode(i.s+"  ·  "));
+  links.append(el("span",i.d&&Date.now()-i.d<3600000?"fresh":"",geleden(i.d)));m.append(links);
+  if(!voorAan){const a=el("a");a.href=i.l;a.rel="noopener noreferrer";a.append(el("div","kop",i.t),m);li.append(a);ol.append(li);continue}
+  const box=el("div","item"),b=el("button"),pijl=el("span","pijl");m.append(pijl);
+  b.append(el("div","kop",i.t),m);box.append(b);li.append(box);ol.append(li);
+  const zet=o=>{box.classList.toggle("open",o);b.setAttribute("aria-expanded",o);pijl.textContent=o?"Sluiten \u25B4":"Meer \u25BE";
+   const oud=box.querySelector(".voor");if(oud)oud.remove();if(!o)return;
+   const v=el("div","voor");
+   if(i.i){const img=el("img");img.alt="";img.loading="lazy";img.referrerPolicy="no-referrer";img.addEventListener("error",()=>img.remove());img.src=i.i;v.append(img)}
+   v.append(i.x?el("p",null,i.x):el("p","leeg","Geen voorproefje beschikbaar voor dit artikel."));
+   const a=el("a","lees","Lees het volledige artikel");a.href=i.l;a.rel="noopener noreferrer";v.append(a);box.append(v)};
+  zet(open.has(i.l));
+  b.addEventListener("click",()=>{const o=!open.has(i.l);o?open.add(i.l):open.delete(i.l);zet(o)})}
 }
 function status(){const n=KRANTEN.filter(k=>data[k.n]&&data[k.n].length).length;
  $("#status").textContent=n?("Bijgewerkt om "+(bijgewerkt||new Date()).toLocaleTimeString("nl-BE",{hour:"2-digit",minute:"2-digit"})+"."):"Het nieuws kon niet geladen worden. Tik onderaan op \u201cNieuws vernieuwen\u201d."}
@@ -114,7 +137,9 @@ function parse(xml){const doc=new DOMParser().parseFromString(xml,"text/xml");if
  return it.map(i=>{const g=t=>{const e=i.getElementsByTagName(t)[0];return e?e.textContent:""};
   let l=atom?((i.querySelector("link")||{getAttribute(){return""}}).getAttribute("href")):g("link");
   const d=new Date(g("pubDate")||g("published")||g("updated")||g("dc:date"));const tx=document.createElement("textarea");tx.innerHTML=g("title").replace(/<[^>]*>/g,"");
-  return{t:tx.value.trim(),l:(l||"").trim(),d:isNaN(d)?null:d}}).filter(x=>x.t&&/^https?:/.test(x.l)).sort((a,b)=>(b.d||0)-(a.d||0)).slice(0,30)}
+  const html=g("description")||g("summary")||g("content");const im=(html.match(/<img[^>]+src="([^"]+)"/)||[])[1]||((i.querySelector("enclosure[type^=image]")||{getAttribute(){return""}}).getAttribute("url"));
+  const tx2=document.createElement("textarea");tx2.innerHTML=html.replace(/<[^>]*>/g," ");let x=tx2.value.replace(/\s+/g," ").trim();if(x.length>350)x=x.slice(0,x.lastIndexOf(" ",340))+"...";
+  return{t:tx.value.trim(),l:(l||"").trim(),d:isNaN(d)?null:d,x:x,i:im||""}}).filter(x=>x.t&&/^https?:/.test(x.l)).sort((a,b)=>(b.d||0)-(a.d||0)).slice(0,30)}
 // Reserve: enkel als headlines.json ontbreekt (bv. bij lokaal openen), feeds rechtstreeks of via doorgeefluik ophalen.
 const PROX=[u=>u,u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u),u=>"https://corsproxy.io/?url="+encodeURIComponent(u)];
 async function direct(k){for(const p of PROX){try{const c=new AbortController(),to=setTimeout(()=>c.abort(),9000);
@@ -123,13 +148,15 @@ async function direct(k){for(const p of PROX){try{const c=new AbortController(),
 let bezig=false,laatst=0;
 async function laad(){if(bezig)return;bezig=true;laatst=Date.now();$("#vernieuw").textContent="Bezig met laden...";
  try{const r=await fetch("headlines.json?"+Date.now(),{cache:"no-store"});if(!r.ok)throw 0;const j=await r.json();
-  for(const f of j.feeds)data[f.n]=(f.items||[]).map(i=>({t:i.t,l:i.l,d:i.d?new Date(i.d):null}));bijgewerkt=new Date(j.updated)}
+  for(const f of j.feeds)data[f.n]=(f.items||[]).map(i=>({t:i.t,l:i.l,d:i.d?new Date(i.d):null,x:i.x||"",i:i.i||""}));bijgewerkt=new Date(j.updated)}
  catch(e){await Promise.all(KRANTEN.map(async k=>{const it=await direct(k);if(it.length)data[k.n]=it;geladen=1;toon()}));bijgewerkt=new Date()}
  geladen=1;bezig=false;$("#vernieuw").textContent="Nieuws vernieuwen";status();toon()}
 
 function lijstKranten(){const l=$("#lijst");l.textContent="";
  [ALLE,...KRANTEN.map(k=>k.n)].forEach(n=>{const b=el("button",n===keuze?"on":"",n);b.addEventListener("click",()=>{keuze=n;store.set("krant",n);$("#keuze").hidden=true;toon();window.scrollTo(0,0)});l.append(b)})}
 
+function zetVoor(){const b=$("#voor");b.textContent="Voorvertoning: "+(voorAan?"aan":"uit");b.classList.toggle("aan",voorAan);b.setAttribute("aria-pressed",voorAan)}
+$("#voor").addEventListener("click",()=>{voorAan=!voorAan;store.set("voor",voorAan?"1":"0");open.clear();zetVoor();toon()});
 $("#kleiner").addEventListener("click",()=>stap(-1));
 $("#groter").addEventListener("click",()=>stap(1));
 $("#kies").addEventListener("click",()=>{lijstKranten();$("#keuze").hidden=false;$("#keuze").scrollTop=0});
@@ -137,8 +164,8 @@ $("#sluit").addEventListener("click",()=>{$("#keuze").hidden=true});
 $("#vernieuw").addEventListener("click",()=>{laad();window.scrollTo(0,0)});
 $("#boven").addEventListener("click",()=>window.scrollTo({top:0,behavior:"smooth"}));
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-laatst>5*60000)laad()});
-setInterval(()=>{if(window.scrollY<150&&$("#keuze").hidden)laad()},10*60000);
-zetMaat();toon();laad();
+setInterval(()=>{if(window.scrollY<150&&$("#keuze").hidden&&!open.size)laad()},10*60000);
+zetMaat();zetVoor();toon();laad();
 </script>
 </body>
 </html>
