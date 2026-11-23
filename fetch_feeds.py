@@ -1,17 +1,28 @@
-import json, sys, re, html, urllib.request, urllib.parse, xml.etree.ElementTree as ET
+import json, sys, re, html, subprocess, urllib.request, xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
 
-# De namen moeten exact overeenkomen met de lijst KRANTEN in index.html
+# De namen moeten exact overeenkomen met de lijst KRANTEN in index.html.
+#
+# Mediahuis (De Standaard, Het Nieuwsblad, Gazet van Antwerpen, Het Belang
+# van Limburg) zet titel, korte tekst, foto en link in de openbare feed
+# https://www.<krant>/rss/. De oude adressen /rss/section/<uuid> sturen door
+# naar een loginmuur of antwoorden 403. De artikelpagina zelf zit achter
+# Cloudflare; de feed niet. We halen dus alleen die feed op, nooit de
+# volledige tekst.
+#
+# De Tijd is Mediafin, geen Mediahuis. /rss/top_stories.xml bestaat niet meer
+# (404). /rss/nieuws.xml geeft titel, tekst en link, maar geen foto per artikel,
+# en de artikelpagina is vanaf een server geblokkeerd. Geen aggregator.
 FEEDS = [
  ("VRT NWS", "https://www.vrt.be/vrtnws/nl.rss.articles.xml"),
  ("Het Laatste Nieuws", "https://www.hln.be/home/rss.xml"),
- ("De Standaard", "https://www.standaard.be/rss/section/1f2838d4-99ea-49f0-9102-138784c7ea7c"),
- ("Het Nieuwsblad", "https://www.nieuwsblad.be/rss/section/55178e67-15a8-4ddd-a3d8-bfe5708f8932"),
+ ("De Standaard", "https://www.standaard.be/rss/"),
+ ("Het Nieuwsblad", "https://www.nieuwsblad.be/rss/"),
  ("De Morgen", "https://www.demorgen.be/in-het-nieuws/rss.xml"),
- ("De Tijd", "https://www.tijd.be/rss/top_stories.xml"),
- ("Gazet van Antwerpen", "https://www.gva.be/rss/section/ca750cdf-3d1e-4621-90ef-a3260118e21c"),
- ("Het Belang van Limburg", "https://www.hbvl.be/rss/section/D1618839-F921-43CC-AF6A-A2B200A962DC"),
+ ("De Tijd", "https://www.tijd.be/rss/nieuws.xml"),
+ ("Gazet van Antwerpen", "https://www.gva.be/rss/"),
+ ("Het Belang van Limburg", "https://www.hbvl.be/rss/"),
  ("Knack", "https://www.knack.be/feed/"),
  ("Bruzz", "https://www.bruzz.be/rss.xml"),
  ("Newsmonkey", "https://newsmonkey.be/feed/"),
@@ -20,27 +31,62 @@ FEEDS = [
  ("HLN Sport", "https://www.hln.be/sport/rss.xml"),
 ]
 
-# Kranten van Mediahuis (De Standaard, Nieuwsblad, GVA, HBVL, De Tijd) blokkeren
-# servers zoals die van GitHub. Lukt hun eigen feed niet, dan halen we hun koppen
-# van de voorbije 24 uur via Google Nieuws (alleen titel, tijd en link).
-RESERVE = {
- "De Standaard": "standaard.be",
- "Het Nieuwsblad": "nieuwsblad.be",
- "De Tijd": "tijd.be",
- "Gazet van Antwerpen": "gva.be",
- "Het Belang van Limburg": "hbvl.be",
-}
-UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+# Eerlijke feedlezer. Lukt dat niet (Cloudflare-muur), dan een gewone browser.
+UA_FEED = "Mozilla/5.0 (compatible; Nieuwslezer/1.0; +https://verbeeckorama.github.io/nieuws/)"
+UA_BROWSER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+ACCEPT = "application/rss+xml, application/atom+xml, application/xml;q=0.9, application/json;q=0.8, text/xml;q=0.8, */*;q=0.7"
 
-def haal(url, timeout=20):
+def is_feed(data):
+    head = (data or b"").lstrip()
+    if head.startswith(b"\xef\xbb\xbf"):
+        head = head[3:].lstrip()
+    low = head[:400].lower()
+    return low.startswith((b"<?xml", b"<rss", b"<feed", b"<rdf")) or low.startswith(b"{")
+
+def haal_python(url, timeout, ua):
     req = urllib.request.Request(url, headers={
-        "User-Agent": UA,
-        "Accept": "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.7",
+        "User-Agent": ua,
+        "Accept": ACCEPT,
         "Accept-Language": "nl-BE,nl;q=0.9,en;q=0.6",
         "Cache-Control": "no-cache",
     })
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
+
+def haal_curl(url, timeout, ua):
+    # curl heeft een TLS-vingerafdruk die Cloudflare wel doorlaat,
+    # in tegenstelling tot urllib op sommige Mediahuis-paden.
+    p = subprocess.run(
+        ["curl", "-fsSL", "--compressed", "--max-redirs", "5",
+         "--max-time", str(timeout),
+         "-A", ua,
+         "-H", "Accept: " + ACCEPT,
+         "-H", "Accept-Language: nl-BE,nl;q=0.9,en;q=0.6",
+         "-H", "Cache-Control: no-cache",
+         url],
+        capture_output=True, timeout=timeout + 5,
+    )
+    if p.returncode != 0:
+        err = p.stderr.decode("utf-8", "replace").strip().splitlines()
+        raise RuntimeError(err[-1][:180] if err else f"curl exit {p.returncode}")
+    return p.stdout
+
+def haal(url, timeout=20):
+    """Bytes van een feed of van headlines.json. HTML-muur telt als mislukking."""
+    laatste = None
+    for naam, fn, ua in (
+        ("python", haal_python, UA_FEED),
+        ("curl", haal_curl, UA_BROWSER),
+    ):
+        try:
+            data = fn(url, timeout, ua)
+        except Exception as e:
+            laatste = RuntimeError(f"{naam}: {type(e).__name__}: {e}")
+            continue
+        if is_feed(data):
+            return data
+        laatste = RuntimeError(f"{naam}: geen feed")
+    raise laatste or RuntimeError("leeg")
 
 def name(tag): return tag.rsplit("}", 1)[-1]
 
@@ -92,6 +138,7 @@ def items(xml):
         links = []
         tekst = {}
         beeld = ""
+        bijschrift = ""
         for c in el:
             n = name(c.tag)
             if n == "title": t = "".join(c.itertext()).strip()
@@ -102,6 +149,8 @@ def items(xml):
                     for g in kand:
                         if name(g.tag) in ("content", "thumbnail") and g.get("url") and (g.get("medium", "image") == "image" or "image" in g.get("type", "")):
                             beeld = https(g.get("url")); break
+                if not bijschrift and n == "content":
+                    bijschrift = "".join(c.itertext())
             elif n in ("description", "summary", "content", "encoded"):
                 tekst.setdefault(n, "".join(c.itertext()))
             elif n == "enclosure" and not beeld:
@@ -121,117 +170,30 @@ def items(xml):
                 if c.get("rel") == "enclosure" and "image" in c.get("type", "image"):
                     beeld = https(c.get("href")); break
         ruw = tekst.get("description") or tekst.get("summary") or tekst.get("content") or tekst.get("encoded") or ""
+        # Sommige Mediahuis-items hebben geen description, wel een fotobijschrift.
+        # Trefwoordlijsten ("themabeeld, thema, ...") laten we liggen.
+        if not kort(ruw) and bijschrift:
+            cap = " ".join(bijschrift.split())
+            laag = cap.lower()
+            if (len(cap) >= 40 and laag.count(",") < 4
+                    and "themabeeld" not in laag and "themafoto" not in laag):
+                ruw = cap
         if not beeld:
             for v in [ruw] + list(tekst.values()):
                 m = re.search(r'<img[^>]+src="([^"]+)"', v or "")
                 if m: beeld = https(html.unescape(m.group(1))); break
         if t and l and l.startswith("http"):
             out.append({"t": t, "l": l, "d": d, "x": kort(ruw), "i": beeld})
-    out.sort(key=lambda x: x["d"] or "", reverse=True)
-    return out[:80]
+    # Dezelfde kop kan twee keer in een feed staan (liveblog).
+    gezien, uniek = set(), []
+    for i in out:
+        if i["l"] in gezien: continue
+        gezien.add(i["l"])
+        uniek.append(i)
+    uniek.sort(key=lambda x: x["d"] or "", reverse=True)
+    return uniek[:80]
 
-def google(site):
-    url = f"https://news.google.com/rss/search?q=site:{site}+when:1d&hl=nl&gl=BE&ceid=BE:nl"
-    it = items(haal(url))
-    for i in it:
-        # Google zet " - GVA" of " - De Standaard" achter elke titel
-        i["t"] = re.sub(r"\s+-\s+[^-]{2,40}$", "", i["t"]).strip()
-        i["x"] = ""
-    return it
-
-# Laatste redmiddel voor Mediahuis: de voorpagina van dekrantenkoppen.be lezen.
-# We nemen enkel titel, korte samenvatting en de link naar de krant zelf.
-DKK_URL = "https://www.dekrantenkoppen.be/"
-_dkk = None
-def dkk_pagina():
-    global _dkk
-    if _dkk is None:
-        try:
-            _dkk = haal(DKK_URL).decode("utf-8", "replace")
-            print(f"dekrantenkoppen.be gelezen ({len(_dkk)} tekens)")
-        except Exception as e:
-            _dkk = ""
-            print(f"dekrantenkoppen.be niet bereikbaar: {type(e).__name__}: {e}")
-    return _dkk
-
-def attr(tag, naam):
-    m = re.search(naam + r'\s*=\s*"([^"]*)"', tag) or re.search(naam + r"\s*=\s*'([^']*)'", tag)
-    return html.unescape(m.group(1)) if m else ""
-
-def dkk(n, site):
-    pagina = dkk_pagina()
-    out, gezien, laatste = [], set(), None
-    for m in re.finditer(r"(<a\s[^>]*>)(.*?)</a>", pagina, re.S | re.I):
-        tag, tekst = m.group(1), m.group(2)
-        titel = attr(tag, "title")
-        if titel.startswith("Meer details over:"):
-            if laatste is not None and not laatste["x"]:
-                laatste["x"] = kort(titel.split(":", 1)[1].strip())
-            continue
-        laatste = None
-        if titel.strip() != f"Lees het artikel op {n}":
-            continue
-        href = attr(tag, "href")
-        if "dekrantenkoppen" in urllib.parse.urlparse(href).netloc:
-            q = re.search(r"[?&](?:url|u|link|to)=([^&]+)", href)
-            href = urllib.parse.unquote(q.group(1)) if q else ""
-        # Alleen links die rechtstreeks naar de krant gaan, nooit via hun site
-        if site not in urllib.parse.urlparse(href).netloc:
-            continue
-        t = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", tekst))).strip()
-        if not t or not href.startswith("http") or href in gezien:
-            continue
-        gezien.add(href)
-        laatste = {"t": t, "l": href, "d": "", "x": "", "i": ""}
-        out.append(laatste)
-    return out
-
-def sleutel(t):
-    return re.sub(r"[^a-z0-9]", "", t.lower())[:60]
-
-# Doorgeefluiken: publieke diensten die een feed voor ons ophalen vanaf een ander netwerk.
-RELAIS = [
-    lambda u: "https://api.allorigins.win/raw?url=" + urllib.parse.quote(u, safe=""),
-    lambda u: "https://corsproxy.io/?url=" + urllib.parse.quote(u, safe=""),
-    lambda u: "https://api.codetabs.com/v1/proxy?quest=" + u,
-]
-
-def mediahuis(n, url, site):
-    """Probeer alle wegen na elkaar; geef (items, via, fouten) terug."""
-    fouten = []
-    try:
-        it = items(haal(url))
-        if it: return it, "eigen feed", fouten
-        fouten.append("eigen feed: leeg")
-    except Exception as e:
-        fouten.append(f"eigen feed: {type(e).__name__}")
-    for r in RELAIS:
-        naam = r("x").split("/")[2]
-        try:
-            it = items(haal(r(url), timeout=15))
-            if it: return it, f"eigen feed via {naam}", fouten
-            fouten.append(f"{naam}: leeg")
-        except Exception as e:
-            fouten.append(f"{naam}: {type(e).__name__}")
-    # Eerst Google Nieuws; dekrantenkoppen.be vult enkel aan met koppen die nog ontbreken.
-    it, via = [], []
-    try:
-        it = google(site)
-        if it: via.append(f"Google Nieuws ({len(it)})")
-        else: fouten.append("Google Nieuws: leeg")
-    except Exception as e:
-        fouten.append(f"Google Nieuws: {type(e).__name__}")
-    try:
-        bekend = {sleutel(i["t"]) for i in it}
-        extra = [i for i in dkk(n, site) if sleutel(i["t"]) not in bekend]
-        if extra:
-            via.append(f"aangevuld met dekrantenkoppen.be ({len(extra)})")
-            it = it + extra
-    except Exception as e:
-        fouten.append(f"dekrantenkoppen.be: {type(e).__name__}")
-    return it, " + ".join(via), fouten
-
-# Vangnet: de koppen van de vorige keer, voor het geval alles tijdelijk faalt.
+# Vangnet: de koppen van de vorige keer, voor het geval een feed tijdelijk faalt.
 VORIGE = {}
 try:
     oud = json.loads(haal("https://verbeeckorama.github.io/nieuws/headlines.json"))
@@ -244,13 +206,13 @@ except Exception as e:
 result = []
 for n, url in FEEDS:
     it, via, fouten = [], "", []
-    if n in RESERVE:
-        it, via, fouten = mediahuis(n, url, RESERVE[n])
-    else:
-        try:
-            it = items(haal(url)); via = "eigen feed"
-        except Exception as e:
-            fouten.append(f"{type(e).__name__}: {e}")
+    try:
+        it = items(haal(url))
+        via = "eigen feed"
+        if not it:
+            fouten.append("eigen feed: leeg")
+    except Exception as e:
+        fouten.append(f"eigen feed: {e}")
     if it:
         # Koppen zonder tijd: neem de tijd van de vorige keer, anders "nu"
         oud_d = {i["l"]: i.get("d") for i in VORIGE.get(n, [])}
@@ -262,7 +224,10 @@ for n, url in FEEDS:
         it, via = VORIGE[n], "vorige keer (bewaard)"
     if it:
         result.append({"n": n, "via": via, "items": it})
-        print(f"OK   {n}: {len(it)} koppen via {via}" + (f"  [{'; '.join(fouten)}]" if fouten else ""))
+        nt = sum(1 for i in it if i.get("x"))
+        nb = sum(1 for i in it if i.get("i"))
+        extra = f"  [{'; '.join(fouten)}]" if fouten else ""
+        print(f"OK   {n}: {len(it)} koppen via {via} ({nt} met tekst, {nb} met beeld){extra}")
     else:
         result.append({"n": n, "err": ("; ".join(fouten) or "leeg")[:160]})
         print(f"FOUT {n}: {'; '.join(fouten) or 'geen koppen'}")
