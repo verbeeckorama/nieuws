@@ -120,6 +120,28 @@ function geleden(d){if(!d)return"";const m=Math.round((Date.now()-d)/60000);
  return d.toLocaleDateString("nl-BE",{weekday:"long",day:"numeric",month:"long"})}
 function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 
+// Zelfde kop, los van hoofdletters, spaties, aanhalingstekens en leestekens.
+function zelfdeKop(t){
+ return (t||"").normalize("NFKC").replace(/[\u00ad\u200b\u200c\u200d\ufeff]/g,"").toLowerCase()
+  .replace(/['"\u0060\u00b4\u2018\u2019\u201c\u201d\u00ab\u00bb\u2039\u203a]/g,"")
+  .replace(/[^\p{L}\p{N}]+/gu," ").trim();
+}
+function punten(i){return (i.x?2:0)+(i.i?2:0)}
+// Een gedeelde kop een keer tonen. Gazet van Antwerpen blijft staan; anders de versie met tekst en foto.
+function zonderDubbels(lijst){
+ const map=new Map();
+ for(const i of lijst){const k=zelfdeKop(i.t)||i.l;const g=map.get(k);if(g)g.push(i);else map.set(k,[i])}
+ const out=[];
+ for(const g of map.values()){
+  if(g.length===1){out.push(g[0]);continue}
+  const gva=g.filter(i=>i.s==="Gazet van Antwerpen");
+  const pool=gva.length?gva:g;
+  out.push(pool.reduce((best,i)=>punten(i)>punten(best)||(punten(i)===punten(best)&&(i.d||0)>(best.d||0))?i:best));
+ }
+ out.sort((a,b)=>(b.d||0)-(a.d||0));
+ return out;
+}
+
 function toon(){
  const een=gekozen.length===1, alle=gekozen.length===NAMEN.length;
  $("#kiesTxt").textContent=alle?"Alle kranten":een?gekozen[0]:"Mijn kranten ("+gekozen.length+")";
@@ -127,7 +149,7 @@ function toon(){
  const ol=$("#koppen");ol.textContent="";
  let lijst;
  const recent=i=>!i.d||Date.now()-i.d<=DAG;
- lijst=gekozen.flatMap(n=>(data[n]||[]).filter(recent).map(i=>({...i,s:n}))).sort((a,b)=>(b.d||0)-(a.d||0));
+ lijst=zonderDubbels(gekozen.flatMap(n=>(data[n]||[]).filter(recent).map(i=>({...i,s:n}))));
  if(!lijst.length){const li=el("li");li.append(el("div","msg",geladen?"Er zijn de voorbije 24 uur geen koppen van deze kranten. Tik bovenaan op de kranten-knop om er meer aan te vinken.":"Even geduld, het nieuws wordt geladen..."));ol.append(li);return}
  for(const i of lijst){const li=el("li");
   const m=el("div","meta"),links=el("span");
