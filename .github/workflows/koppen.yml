@@ -1,8 +1,34 @@
 name: Nieuws bijwerken
+
+# GitHub laat een frequente cron bijna altijd vallen. Dit bestand stond op
+# elke 10 minuten; in de 16 uur daarna startten er 2 geplande runs.
+# Het uurlijkse schema is daarom alleen een vangnet.
+#
+# Voor een vaste verversing (bijvoorbeeld elke 10 minuten) moet een externe
+# taak de workflow wakker maken. Twee manieren, allebei met een token dat
+# alleen deze repo mag aansturen (Actions: read and write). Het token hoort
+# niet in git.
+#
+#   POST https://api.github.com/repos/verbeeckorama/nieuws/actions/workflows/koppen.yml/dispatches
+#   Authorization: Bearer <token>
+#   Accept: application/vnd.github+json
+#   X-GitHub-Api-Version: 2022-11-28
+#   {"ref":"main"}
+#
+#   POST https://api.github.com/repos/verbeeckorama/nieuws/dispatches
+#   dezelfde headers
+#   {"event_type":"ververs"}
+#
+# Een antwoord 204 betekent dat de run in de wachtrij staat.
+# Na 60 dagen zonder commit, issue of pull request zet GitHub geplande
+# workflows uit. De externe ping blijft werken zolang deze workflow
+# op het tabblad Actions aan staat. Staat ze uit, dan opnieuw aanzetten.
 on:
   schedule:
-        - cron: "3,13,23,33,43,53 * * * *"   # elke 10 minuten, net naast de drukke momenten
+    - cron: "17 * * * *"
   workflow_dispatch:
+  repository_dispatch:
+    types: [ververs]
   push:
     branches: [main]
 
@@ -11,16 +37,17 @@ permissions:
   pages: write
   id-token: write
 
+# Een lopende deploy niet afbreken. upload en deploy horen in aparte jobs:
+# in dezelfde job ziet deploy-pages het artifact soms nog niet
+# ("No artifacts named github-pages") en faalt de publicatie.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build-deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Koppen ophalen
@@ -32,5 +59,15 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
-      - id: deploy
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy naar GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
