@@ -161,11 +161,14 @@ async function direct(k){for(const p of PROX){try{const c=new AbortController(),
  const r=await fetch(p(k.u),{credentials:"omit",signal:c.signal,cache:"no-store"});clearTimeout(to);if(!r.ok)continue;const it=parse(await r.text());if(it.length)return it}catch(e){}}return[]}
 
 let bezig=false,laatst=0;
+function naarBoven(){try{window.scrollTo({top:0,left:0,behavior:"instant"})}catch(e){window.scrollTo(0,0)}
+ const se=document.scrollingElement||document.documentElement;se.scrollTop=0;document.body.scrollTop=0}
+let terugNaarBoven=false;
 async function laad(){if(bezig)return;bezig=true;laatst=Date.now();$("#vernieuw").textContent="Bezig met laden...";$("#ververs").classList.add("bezig");$("#ververs .tx").textContent="Laden...";
  try{const r=await fetch("headlines.json?"+Date.now(),{cache:"no-store"});if(!r.ok)throw 0;const j=await r.json();
   for(const f of j.feeds)data[f.n]=(f.items||[]).map(i=>({t:i.t,l:i.l,d:i.d?new Date(i.d):null,x:i.x||"",i:i.i||""}));bijgewerkt=new Date(j.updated)}
  catch(e){await Promise.all(KRANTEN.map(async k=>{const it=await direct(k);if(it.length)data[k.n]=it;geladen=1;toon()}));bijgewerkt=new Date()}
- geladen=1;bezig=false;$("#vernieuw").textContent="Nieuws vernieuwen";$("#ververs").classList.remove("bezig");$("#ververs .tx").textContent="Vernieuwen";status();toon()}
+ geladen=1;bezig=false;$("#vernieuw").textContent="Nieuws vernieuwen";$("#ververs").classList.remove("bezig");$("#ververs .tx").textContent="Vernieuwen";status();toon();if(terugNaarBoven){terugNaarBoven=false;naarBoven();requestAnimationFrame(naarBoven)}}
 
 function lijstKranten(){const l=$("#lijst");l.textContent="";
  NAMEN.forEach(n=>{const b=el("button"),v=el("span","vak");v.setAttribute("aria-hidden","true");b.setAttribute("role","checkbox");
@@ -181,8 +184,9 @@ $("#kies").addEventListener("click",()=>{lijstKranten();$("#keuze").hidden=false
 $("#sluit").addEventListener("click",sluitKeuze);
 $("#allesAan").addEventListener("click",()=>{gekozen=NAMEN.slice();bewaarKeuze();lijstKranten()});
 $("#allesUit").addEventListener("click",()=>{gekozen=[];bewaarKeuze();lijstKranten()});
-$("#vernieuw").addEventListener("click",()=>{laad();window.scrollTo(0,0)});
-$("#ververs").addEventListener("click",()=>{open.clear();laad();window.scrollTo(0,0)});
+function vernieuwKnop(){open.clear();toon();naarBoven();terugNaarBoven=true;laad()}
+$("#vernieuw").addEventListener("click",vernieuwKnop);
+$("#ververs").addEventListener("click",vernieuwKnop);
 $("#boven").addEventListener("click",()=>window.scrollTo({top:0,behavior:"smooth"}));
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-laatst>5*60000)laad()});
 setInterval(()=>{if(window.scrollY<150&&$("#keuze").hidden&&!open.size)laad()},10*60000);
