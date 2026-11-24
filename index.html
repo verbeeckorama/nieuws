@@ -99,7 +99,8 @@ const KRANTEN=[
  {n:"Newsmonkey",u:"https://newsmonkey.be/feed/"},
  {n:"Apache",u:"https://www.apache.be/feed"},
  {n:"Sporza (sport)",u:"https://sporza.be/nl.rss.xml"},
- {n:"HLN Sport",u:"https://www.hln.be/sport/rss.xml"}
+ {n:"HLN Sport",u:"https://www.hln.be/sport/rss.xml"},
+ {n:"Gemeente Brecht",u:"https://www.brecht.be/nieuws"}
 ];
 const ALLE="Alle kranten";
 const MATEN=[18,20,22,24,27,30,34,38,44];
@@ -108,9 +109,14 @@ const $=s=>document.querySelector(s);
 let maat=parseInt(store.get("maat"));if(!MATEN.includes(maat))maat=22;let open=new Set(); const DAG=24*3600000; let data={}, bijgewerkt=null, geladen=0;
 const NAMEN=KRANTEN.map(k=>k.n);
 let gekozen;try{gekozen=JSON.parse(store.get("kranten")||"null")}catch(e){gekozen=null}
-if(!Array.isArray(gekozen))gekozen=NAMEN.slice();
-gekozen=gekozen.filter(n=>NAMEN.includes(n));if(!gekozen.length)gekozen=NAMEN.slice();
+const hadKeuze=Array.isArray(gekozen);
+if(!hadKeuze)gekozen=NAMEN.slice();
+gekozen=gekozen.filter(n=>NAMEN.includes(n));
 const bewaarKeuze=()=>store.set("kranten",JSON.stringify(gekozen));
+// Wie alles aan had, krijgt een nieuwe bron erbij. Een eigen keuze blijft zoals ze was.
+const rest=NAMEN.filter(n=>n!=="Gemeente Brecht");
+if(hadKeuze&&rest.length&&rest.every(n=>gekozen.includes(n))&&!gekozen.includes("Gemeente Brecht")){gekozen=NAMEN.slice();bewaarKeuze()}
+if(!gekozen.length){gekozen=NAMEN.slice();bewaarKeuze()}
 
 function zetMaat(){document.documentElement.style.fontSize=maat+"px";$("#kleiner").disabled=maat<=MATEN[0];$("#groter").disabled=maat>=MATEN[MATEN.length-1];store.set("maat",maat)}
 function stap(r){let i=MATEN.indexOf(maat);if(i<0)i=2;i=Math.min(MATEN.length-1,Math.max(0,i+r));maat=MATEN[i];zetMaat()}
@@ -145,12 +151,14 @@ function zonderDubbels(lijst){
 function toon(){
  const een=gekozen.length===1, alle=gekozen.length===NAMEN.length;
  $("#kiesTxt").textContent=alle?"Alle kranten":een?gekozen[0]:"Mijn kranten ("+gekozen.length+")";
- $("#titel").textContent=(een?gekozen[0]:"Nieuws")+" van de voorbije 24 uur";
+ const alleenBrecht=een&&gekozen[0]==="Gemeente Brecht";
+ $("#titel").textContent=alleenBrecht?"Gemeente Brecht van de voorbije 3 maanden":(een?gekozen[0]:"Nieuws")+" van de voorbije 24 uur";
  const ol=$("#koppen");ol.textContent="";
  let lijst;
- const recent=i=>!i.d||Date.now()-i.d<=DAG;
- lijst=zonderDubbels(gekozen.flatMap(n=>(data[n]||[]).filter(recent).map(i=>({...i,s:n}))));
- if(!lijst.length){const li=el("li");li.append(el("div","msg",geladen?"Er zijn de voorbije 24 uur geen koppen van deze kranten. Tik bovenaan op de kranten-knop om er meer aan te vinken.":"Even geduld, het nieuws wordt geladen..."));ol.append(li);return}
+ // Kranten: 24 uur. De gemeente publiceert veel trager, dus daar 3 maanden.
+ const recent=(i,n)=>!i.d||Date.now()-i.d<=(n==="Gemeente Brecht"?90*86400000:DAG);
+ lijst=zonderDubbels(gekozen.flatMap(n=>(data[n]||[]).filter(i=>recent(i,n)).map(i=>({...i,s:n}))));
+ if(!lijst.length){const li=el("li");li.append(el("div","msg",geladen?(alleenBrecht?"Er is de voorbije 3 maanden geen nieuws van de gemeente.":"Er zijn de voorbije 24 uur geen koppen van deze kranten. Tik bovenaan op de kranten-knop om er meer aan te vinken."):"Even geduld, het nieuws wordt geladen..."));ol.append(li);return}
  for(const i of lijst){const li=el("li");
   const m=el("div","meta"),links=el("span");
   if(!een)links.append(document.createTextNode(i.s+"  ·  "));

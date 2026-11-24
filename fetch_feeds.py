@@ -1,6 +1,6 @@
 import json, sys, re, html, subprocess, urllib.request, xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 # De namen moeten exact overeenkomen met de lijst KRANTEN in index.html.
 #
@@ -29,7 +29,13 @@ FEEDS = [
  ("Apache", "https://apache.be/feed/artikels/nieuws"),
  ("Sporza (sport)", "https://sporza.be/nl.rss.xml"),
  ("HLN Sport", "https://www.hln.be/sport/rss.xml"),
+ # Geen RSS. De nieuwspagina laadt een openbare lijst (titel, intro, foto, link).
+ ("Gemeente Brecht", "https://www.brecht.be/nieuws"),
 ]
+
+# Gemeentenieuws verschijnt een paar keer per week. Langer dan een dag bewaren,
+# anders is de lijst bijna altijd leeg. Drie maanden is nog actueel (werken, oproepen).
+BRECHT_DAGEN = 90
 
 # Eerlijke feedlezer. Lukt dat niet (Cloudflare-muur), dan een gewone browser.
 UA_FEED = "Mozilla/5.0 (compatible; Nieuwslezer/1.0; +https://verbeeckorama.github.io/nieuws/)"
@@ -71,6 +77,19 @@ def haal_curl(url, timeout, ua):
         raise RuntimeError(err[-1][:180] if err else f"curl exit {p.returncode}")
     return p.stdout
 
+def haal_ruw(url, timeout=20):
+    """Bytes, ook als het gewone HTML is (de nieuwspagina van Brecht)."""
+    laatste = None
+    for naam, fn, ua in (
+        ("python", haal_python, UA_FEED),
+        ("curl", haal_curl, UA_BROWSER),
+    ):
+        try:
+            return fn(url, timeout, ua)
+        except Exception as e:
+            laatste = RuntimeError(f"{naam}: {type(e).__name__}: {e}")
+    raise laatste or RuntimeError("leeg")
+
 def haal(url, timeout=20):
     """Bytes van een feed of van headlines.json. HTML-muur telt als mislukking."""
     laatste = None
@@ -87,6 +106,43 @@ def haal(url, timeout=20):
             return data
         laatste = RuntimeError(f"{naam}: geen feed")
     raise laatste or RuntimeError("leeg")
+
+def brecht(pagina_url):
+    """Titel, korte intro, foto en link. Nooit de volledige artikeltekst."""
+    pagina = haal_ruw(pagina_url).decode("utf-8", "replace")
+    bid = re.search(r'blueprintId\s*=\s*"([^"]+)"', pagina)
+    blk = re.search(r'data-block-id="([^"]+)"[^>]*data-block-type="news-tiles"', pagina)
+    if not (bid and blk):
+        raise RuntimeError("nieuwspagina zonder lijst")
+    basis = "https://www.brecht.be/ajax-id/block/%s/%s" % (bid.group(1), blk.group(1))
+    grens = datetime.now(timezone.utc) - timedelta(days=BRECHT_DAGEN)
+    out, gezien = [], set()
+    for page in range(1, 5):
+        url = basis if page == 1 else basis + "?page=%d" % page
+        data = json.loads(haal(url))
+        pubs = data.get("publications") or []
+        if not pubs:
+            break
+        te_oud = False
+        for p in pubs:
+            if not p.get("published"):
+                continue
+            titel = re.sub(r"\s+", " ", p.get("title") or "").strip()
+            link = (p.get("href") or "").strip()
+            if not titel or not link.startswith("http") or link in gezien:
+                continue
+            d = parse_date(p.get("createdAt") or "")
+            dt = datetime.fromisoformat(d) if d else None
+            if dt is not None and dt < grens:
+                te_oud = True
+                continue
+            gezien.add(link)
+            # intro is de korte tekst op de lijst; body is het hele artikel en blijft weg
+            out.append({"t": titel, "l": link, "d": d, "x": kort(p.get("intro") or ""), "i": https(p.get("img") or "")})
+        if te_oud or page >= len((data.get("pager") or {}).get("pages") or []):
+            break
+    out.sort(key=lambda x: x["d"] or "", reverse=True)
+    return out
 
 def name(tag): return tag.rsplit("}", 1)[-1]
 
@@ -207,12 +263,14 @@ result = []
 for n, url in FEEDS:
     it, via, fouten = [], "", []
     try:
-        it = items(haal(url))
-        via = "eigen feed"
+        if n == "Gemeente Brecht":
+            it, via = brecht(url), "nieuwspagina"
+        else:
+            it, via = items(haal(url)), "eigen feed"
         if not it:
-            fouten.append("eigen feed: leeg")
+            fouten.append("leeg")
     except Exception as e:
-        fouten.append(f"eigen feed: {e}")
+        fouten.append(f"{e}")
     if it:
         # Koppen zonder tijd: neem de tijd van de vorige keer, anders "nu"
         oud_d = {i["l"]: i.get("d") for i in VORIGE.get(n, [])}
